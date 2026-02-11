@@ -29,7 +29,7 @@ import { isReleaseTag, estimateTotalModules, decideStrategy, getBoostDepsData } 
 import { batchInitializeSubmodules, initializeSubmodules, initializeAllSubmodules } from './submodules';
 import { readExceptions, readGitmodules, scanBoostDependencies } from './header-scan';
 import { getArchiveUrl, downloadAndExtractArchive } from './archive';
-import { findGitFeatures, cloneBoostSuperproject, applyPatches } from './git-utils';
+import { findGitFeatures, cloneBoostSuperproject, applyPatches, getRepoName } from './git-utils';
 
 // Re-export for external consumers
 export { generateCacheKey } from './cache';
@@ -163,8 +163,8 @@ export async function main(inputs: Inputs): Promise<Outputs> {
     // Cache boost
     if (cacheAvailable) {
         core.startGroup(`📦 Cache Boost`);
-        core.info(`Saving cache for key: ${cacheKey}`);
-        await cacheBoost(inputs, cacheKey);
+        core.info(`Saving cache for key: ${initialCacheKey}`);
+        await cacheBoost(inputs, initialCacheKey);
         core.endGroup();
     } else if (inputs.cache) {
         core.info('Cache save skipped because cache service is unavailable');
@@ -197,9 +197,13 @@ async function executeGitStrategy(
     core.endGroup();
 
     // Apply patches
+    const patchNames = new Set<string>();
     if (inputs.patches.size > 0) {
         core.startGroup('🔨 Apply Boost Patches');
         await applyPatches(inputs);
+        for (const patch of inputs.patches) {
+            patchNames.add(getRepoName(patch));
+        }
         core.endGroup();
     }
 
@@ -226,7 +230,7 @@ async function executeGitStrategy(
         // No precomputed data for this branch, use layer-by-layer discovery
         core.startGroup('🔧 Initialize Boost Submodules');
         core.info(`Using layer-by-layer dependency discovery`);
-        await initializeSubmodules(inputs, directModules, gitFeatures, exceptions, submodulePaths);
+        await initializeSubmodules(inputs, directModules, gitFeatures, exceptions, submodulePaths, patchNames);
         core.endGroup();
     }
 }

@@ -90,7 +90,7 @@ export async function batchInitializeSubmodules(
  * @param exceptions - Map of header exceptions to module names
  * @param submodulePaths - Set of valid submodule paths from .gitmodules
  */
-export async function initializeSubmodules(inputs: Inputs, allModules: Set<string>, gitFeatures: GitFeatures, exceptions: Record<string, string>, submodulePaths: Set<string>): Promise<void> {
+export async function initializeSubmodules(inputs: Inputs, allModules: Set<string>, gitFeatures: GitFeatures, exceptions: Record<string, string>, submodulePaths: Set<string>, patchNames: Set<string> = new Set()): Promise<void> {
     function fnlog(msg: string): void {
         trace_commands.log(`initializeSubmodules: ${msg}`);
     }
@@ -99,7 +99,9 @@ export async function initializeSubmodules(inputs: Inputs, allModules: Set<strin
     const depthArgs = gitFeatures.supportsDepth ? ['--depth', '1'] : [];
     const gitArgs = jobsArgs.concat(depthArgs).concat(['-q']);
 
-    const allModulesSubPaths = new Set(Array.from(allModules).map((module) => `libs/${module}`));
+    const allModulesSubPaths = new Set(
+        Array.from(allModules).filter((m) => !patchNames.has(m)).map((module) => `libs/${module}`)
+    );
     const essentialModuleSubPaths = new Set(['libs/config', 'libs/headers', 'tools/boost_install', 'tools/build', 'tools/cmake']);
     const initialModuleSubpaths = new Set(Array.from(allModulesSubPaths).concat(Array.from(essentialModuleSubPaths)));
     for (const moduleSubPath of initialModuleSubpaths) {
@@ -107,11 +109,11 @@ export async function initializeSubmodules(inputs: Inputs, allModules: Set<strin
         await exec.exec(`"${gitFeatures.gitPath}"`, args, { cwd: inputs.boost_dir });
     }
 
-    const initializedModules = new Set(allModules);
+    const initializedModules = new Set([...allModules, ...patchNames]);
     initializedModules.add('config');
     initializedModules.add('headers');
     const scannedModules = new Set<string>();
-    const remainingModules = new Set(initializedModules);
+    const remainingModules = new Set([...initializedModules, ...patchNames]);
     while (remainingModules.size > 0) {
         fnlog(`==== ${remainingModules.size} modules remaining to scan ====`);
         fnlog(`Initialized modules: ${gh_inputs.makeValueString(initializedModules)}`);
@@ -122,7 +124,7 @@ export async function initializeSubmodules(inputs: Inputs, allModules: Set<strin
         const modulePath = path.resolve(path.join(inputs.boost_dir, 'libs', module));
         const moduleInputs: Inputs = {
             ...inputs,
-            scan_modules_ignore: new Set<string>([module]),
+            scan_modules_ignore: new Set<string>([...inputs.scan_modules_ignore, ...patchNames, module]),
             modules_scan_paths: new Set<string>(),
             modules_exclude_paths: new Set<string>(['test', 'tests', 'example', 'examples'])
         };
