@@ -29,7 +29,7 @@ import { isReleaseTag, estimateTotalModules, decideStrategy, getBoostDepsData } 
 import { batchInitializeSubmodules, initializeSubmodules, initializeAllSubmodules } from './submodules';
 import { readExceptions, readGitmodules, scanBoostDependencies } from './header-scan';
 import { getArchiveUrl, downloadAndExtractArchive } from './archive';
-import { findGitFeatures, cloneBoostSuperproject, applyPatches } from './git-utils';
+import { findGitFeatures, cloneBoostSuperproject, applyPatches, getRepoName } from './git-utils';
 
 // Re-export for external consumers
 export { generateCacheKey } from './cache';
@@ -66,9 +66,8 @@ export async function main(inputs: Inputs): Promise<Outputs> {
     core.endGroup();
 
     core.startGroup('🔑 Calculate Boost Cache Key');
-    const { cacheKey: initialCacheKey } = await generateCacheKey(inputs, inputs.modules, gitFeatures, { logInfo: true, withFragments: true }) as CacheKeyResult;
+    const { cacheKey } = await generateCacheKey(inputs, inputs.modules, gitFeatures, { logInfo: true, withFragments: true }) as CacheKeyResult;
     core.endGroup();
-    let cacheKey = initialCacheKey;
 
     const cacheAvailable = inputs.cache && cache.isFeatureAvailable();
     if (inputs.cache && !cacheAvailable) {
@@ -126,12 +125,6 @@ export async function main(inputs: Inputs): Promise<Outputs> {
     core.startGroup('🎯 Select Clone Strategy');
     const strategy = decideStrategy(inputs, estimation.totalCount);
     core.info(`Selected strategy: ${strategy}`);
-    core.endGroup();
-
-    // Recalculate cache key with full module set
-    core.startGroup('🔑 Calculate Boost Cache Key');
-    const allModulesForCache = estimation.fromPrecomputed ? estimation.allModules : directModules;
-    cacheKey = await generateCacheKey(inputs, allModulesForCache, gitFeatures) as string;
     core.endGroup();
 
     // Execute the selected strategy
@@ -197,9 +190,13 @@ async function executeGitStrategy(
     core.endGroup();
 
     // Apply patches
+    const patchNames = new Set<string>();
     if (inputs.patches.size > 0) {
         core.startGroup('🔨 Apply Boost Patches');
         await applyPatches(inputs);
+        for (const patch of inputs.patches) {
+            patchNames.add(getRepoName(patch));
+        }
         core.endGroup();
     }
 
@@ -226,7 +223,7 @@ async function executeGitStrategy(
         // No precomputed data for this branch, use layer-by-layer discovery
         core.startGroup('🔧 Initialize Boost Submodules');
         core.info(`Using layer-by-layer dependency discovery`);
-        await initializeSubmodules(inputs, directModules, gitFeatures, exceptions, submodulePaths);
+        await initializeSubmodules(inputs, directModules, gitFeatures, exceptions, submodulePaths, patchNames);
         core.endGroup();
     }
 }
